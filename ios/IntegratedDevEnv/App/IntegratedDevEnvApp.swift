@@ -10,6 +10,7 @@ struct IntegratedDevEnvApp: App {
             ContentView()
                 .environmentObject(settings)
                 .environmentObject(terminalSession)
+                .tint(.cyan)
         }
     }
 }
