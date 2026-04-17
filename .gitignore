@@ -1,0 +1,17 @@
+.DS_Store
+Thumbs.db
+
+# Go
+server/termd
+server/termd.exe
+
+# Xcode / XcodeGen (generate with: cd ios && xcodegen generate)
+ios/*.xcodeproj
+ios/*.xcworkspace
+ios/build/
+**/xcuserdata/
+**/DerivedData/
+
+# CI / local packaging
+artifacts/
+manifest.json

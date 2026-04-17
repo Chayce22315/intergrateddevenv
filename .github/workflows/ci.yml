@@ -1,0 +1,133 @@
+name: IntegratedDevEnv CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  tools-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Generate manifest
+        run: python tools/generate_report.py --output manifest.json
+      - name: Upload manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: tools-manifest
+          path: manifest.json
+
+  server-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache-dependency-path: server/go.sum
+      - name: go vet
+        run: go vet ./...
+        working-directory: server
+      - name: staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          staticcheck ./...
+        working-directory: server
+
+  server-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: ["1.22", "1.23"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache-dependency-path: server/go.sum
+      - name: Test
+        run: go test ./...
+        working-directory: server
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -f docker/Dockerfile .
+
+  ios-setup:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+        working-directory: ios
+
+      - name: Upload iOS tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-workspace
+          path: ios
+
+  ios-build-ipa:
+    runs-on: macos-15
+    needs: [ios-setup]
+    steps:
+      - name: Download iOS tree
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-workspace
+          path: .
+
+      - name: Select Xcode
+        run: |
+          XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+
+      - name: Resolve Swift packages
+        run: xcodebuild -resolvePackageDependencies -project IntegratedDevEnv.xcodeproj -scheme IntegratedDevEnv
+        working-directory: ios
+
+      - name: Archive for device (unsigned)
+        run: |
+          xcodebuild archive \
+            -project IntegratedDevEnv.xcodeproj \
+            -scheme IntegratedDevEnv \
+            -sdk iphoneos \
+            -configuration Release \
+            -archivePath build/IntegratedDevEnv.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            ONLY_ACTIVE_ARCH=NO
+        working-directory: ios
+
+      - name: Package unsigned .ipa
+        run: |
+          mkdir -p artifacts/Payload
+          cp -R ios/build/IntegratedDevEnv.xcarchive/Products/Applications/IntegratedDevEnv.app artifacts/Payload/
+          cd artifacts && zip -ry IntegratedDevEnv-unsigned.ipa Payload
+
+      - name: Upload .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: IntegratedDevEnv-unsigned-ipa
+          path: artifacts/IntegratedDevEnv-unsigned.ipa
