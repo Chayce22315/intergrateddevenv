@@ -37,7 +37,9 @@ final class TerminalSession: ObservableObject {
                 switch message {
                 case .data(let data):
                     DispatchQueue.main.async {
-                        self.terminalView?.feed(byteArray: data[...])
+                        // Data subscript slice is Data.SubSequence, not ArraySlice<UInt8> (Swift 6 / newer SDKs).
+                        let bytes = [UInt8](data)
+                        self.terminalView?.feed(byteArray: bytes[...])
                     }
                 case .string(let s):
                     DispatchQueue.main.async {
