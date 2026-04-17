@@ -97,6 +97,31 @@ jobs:
           name: ios-workspace
           path: .
 
+      # upload-artifact v4 often stores paths without the leading `ios/` segment, so the
+      # archive may extract project.yml and *.xcodeproj to the repo root instead of ios/.
+      - name: Ensure ios/ layout
+        shell: bash
+        run: |
+          set -e
+          if [ -d ios ]; then
+            echo "Using existing ios/ directory"
+            ls -la ios
+            exit 0
+          fi
+          if [ ! -f project.yml ] && [ ! -d IntegratedDevEnv ]; then
+            echo "Downloaded artifact missing expected XcodeGen output."
+            ls -la
+            exit 1
+          fi
+          mkdir -p ios
+          [ -f project.yml ] && mv project.yml ios/
+          [ -d IntegratedDevEnv ] && mv IntegratedDevEnv ios/
+          shopt -s nullglob
+          for x in *.xcodeproj *.xcworkspace; do
+            [ -e "$x" ] && mv "$x" ios/
+          done
+          ls -la ios
+
       - name: Select Xcode
         run: |
           XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
